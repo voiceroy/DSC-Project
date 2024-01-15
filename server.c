@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,9 +10,6 @@
 
 #define MSG_SIZE 513
 #define SNDR_SIZE 19 // inet_ntoa() always returns a string of size 19
-
-size_t MAX_CLIENTS = 10;
-size_t MAX_EVENTS = 10;
 
 typedef struct {
     struct in_addr client_addr;
@@ -24,10 +22,13 @@ typedef struct {
     char sender[SNDR_SIZE];
 } msg;
 
-client_info *clients;
+typedef struct {
+    size_t max_clients;
+    size_t max_events;
+} server_config;
 
-void add_client(client_info client_struct) {
-    for (int i = 0; i < MAX_CLIENTS; i++) {
+void add_client(server_config config, client_info *clients, client_info client_struct) {
+    for (int i = 0; i < config.max_clients; i++) {
         if (clients[i].client_socket == 0) {
             clients[i] = client_struct;
             clients[i].index = i;
@@ -36,10 +37,27 @@ void add_client(client_info client_struct) {
     }
 }
 
-void remove_client(client_info client_struct) { memset(&clients[client_struct.index], 0, sizeof(client_info)); }
+void remove_client(client_info *clients, client_info client_struct) {
+    memset(&clients[client_struct.index], 0, sizeof(client_info));
+}
 
-void broadcast_message(msg bdcast_msg, int sender) {
-    for (int i = 0; i < MAX_CLIENTS; i++) {
+msg pack_msg(char *buffer, struct in_addr client_addr) {
+    msg bdcast_msg;
+    strcpy(bdcast_msg.message, buffer);
+    strcpy(bdcast_msg.sender, inet_ntoa(client_addr));
+
+    return bdcast_msg;
+}
+
+void disconnect_client(client_info *clients, size_t client_index, int client_fd, int epoll_fd) {
+    printf("Client %s disconnected\n", inet_ntoa(clients[client_index].client_addr));
+    remove_client(clients, clients[client_index]);
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
+    close(client_fd);
+}
+
+void broadcast_message(server_config config, client_info *clients, msg bdcast_msg, int sender) {
+    for (int i = 0; i < config.max_clients; i++) {
         if (clients[i].client_socket != 0 && clients[i].client_socket != sender) {
             send(clients[i].client_socket, &bdcast_msg, sizeof(msg), 0);
         }
@@ -50,6 +68,7 @@ int main(int argc, char *argv[]) {
     int server_socket, client_socket, port, status;
     struct sockaddr_in server, client; // IPv4 only
     socklen_t client_length = sizeof(struct sockaddr_in);
+    server_config config = {10, 10};
 
     if (argc < 2) {
         fprintf(stderr, "Usage: server PORT [MAX_CLIENTS]\n");
@@ -58,19 +77,18 @@ int main(int argc, char *argv[]) {
     port = atoi(argv[1]);
 
     if (argc == 3) {
-        MAX_CLIENTS = atoi(argv[2]);
-        if (MAX_CLIENTS <= 0) {
-            MAX_CLIENTS = 10;
+        config.max_clients = atoi(argv[2]);
+        if (config.max_clients <= 0) {
+            config.max_clients = 10;
         }
-        MAX_EVENTS = MAX_CLIENTS;
+        config.max_events = config.max_clients;
     }
 
-    clients = malloc(sizeof(client_info) * MAX_CLIENTS);
+    client_info *clients = calloc(config.max_clients, sizeof(client_info));
     if (clients == NULL) {
-        fprintf(stderr, "Malloc failed\n");
+        fprintf(stderr, "Calloc error\n");
         return EXIT_FAILURE;
     }
-    bzero(clients, sizeof(client_info) * MAX_CLIENTS);
 
     // Fill in the server struct
     memset(&server, 0, sizeof(struct sockaddr_in));
@@ -92,17 +110,17 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    printf("Server listening on port: %d\nMax clients: %zu\n", ntohs(server.sin_port), MAX_CLIENTS);
+    printf("Server listening on port: %d\nMax clients: %zu\n", ntohs(server.sin_port), config.max_clients);
 
     // Listen for connections
-    status = listen(server_socket, MAX_CLIENTS);
+    status = listen(server_socket, config.max_clients);
     if (status == -1) {
         perror("Listen error");
         return EXIT_FAILURE;
     }
 
     // Create epoll instance
-    int epoll_fd = epoll_create(MAX_EVENTS);
+    int epoll_fd = epoll_create(config.max_events);
     if (epoll_fd == -1) {
         perror("Epoll error: ");
         return EXIT_FAILURE;
@@ -116,15 +134,15 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    struct epoll_event *events = malloc(sizeof(struct epoll_event) * MAX_EVENTS);
+    // Buffer to write the events to
+    struct epoll_event *events = calloc(config.max_events, sizeof(struct epoll_event));
     if (events == NULL) {
-        fprintf(stderr, "Malloc error\n");
+        fprintf(stderr, "Calloc error\n");
         return EXIT_FAILURE;
     }
-    bzero(events, sizeof(struct epoll_event) * MAX_EVENTS);
 
     while (true) {
-        int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        int num_events = epoll_wait(epoll_fd, events, config.max_events, -1);
         if (num_events == -1) {
             perror("Epoll error: ");
             break;
@@ -151,14 +169,14 @@ int main(int argc, char *argv[]) {
 
                 // Create client_info for the new client
                 client_info client_struct = {client.sin_addr, client_socket};
-                add_client(client_struct);
+                add_client(config, clients, client_struct);
             } else {
                 // Handle data from existing clients
                 int client_fd = events[i].data.fd;
                 int client_index = -1;
 
                 // Find the client index
-                for (int j = 0; j < MAX_CLIENTS; j++) {
+                for (int j = 0; j < config.max_clients; j++) {
                     if (clients[j].client_socket == client_fd) {
                         client_index = j;
                         break;
@@ -175,17 +193,10 @@ int main(int argc, char *argv[]) {
                 char buffer[MSG_SIZE];
                 int recv_length = recv(client_fd, buffer, sizeof(buffer), 0);
                 if (recv_length <= 0) { // Client disconnected
-                    printf("Client %s disconnected\n", inet_ntoa(clients[client_index].client_addr));
-                    remove_client(clients[client_index]);
-                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
-                    close(client_fd);
+                    disconnect_client(clients, client_index, client_fd, epoll_fd);
                 } else { // Received a message from the client, broadcast it
-                    // Pack bdcast_msg
-                    msg bdcast_msg;
-                    strcpy(bdcast_msg.message, buffer);
-                    strcpy(bdcast_msg.sender, inet_ntoa(clients[client_index].client_addr));
-
-                    broadcast_message(bdcast_msg, client_fd);
+                    msg bdcast_msg = pack_msg(buffer, clients[client_index].client_addr); // pack bdcast_msg
+                    broadcast_message(config, clients, bdcast_msg, client_fd);
                     bzero(buffer, sizeof(buffer)); // Clear out the client message
                 }
             }
