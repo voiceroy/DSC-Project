@@ -95,13 +95,13 @@ int main(int argc, char *argv[]) {
         printf("> ");
         fflush(stdout);
 
-        status = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        int occured = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (status == -1) {
             perror("EPOLL error:");
             return EXIT_FAILURE;
         }
 
-        for (size_t i = 0; i < status; i++) {
+        for (size_t i = 0; i < occured; i++) {
             if (events[i].data.fd == client_socket && events[i].events & EPOLLIN) {
                 // We got some message
                 status = receive_messages(client_socket);
