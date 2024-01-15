@@ -1,5 +1,5 @@
 # DSC Project
-
+## Multi User Chat Application
 Project members:<br>
 	- Harishankar G [voiceroy](https://github.com/voiceroy)<br>
 	- Achyutha B J [AchyuthaBJagadeesh](https://github.com/AchyuthaBJagadeesh)<br>
