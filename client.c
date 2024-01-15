@@ -3,12 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/poll.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #define MSG_SIZE 513
 #define SNDR_SIZE 19
+#define MAX_EVENTS 2
 
 char QUIT_CMD[] = "QUIT";
 
@@ -19,16 +20,13 @@ typedef struct {
 
 int receive_messages(int client_socket) {
     MSG recvd_MSG;
-    int bytes_received;
-
-    bytes_received = recv(client_socket, &recvd_MSG, sizeof(MSG), 0);
+    int bytes_received = recv(client_socket, &recvd_MSG, sizeof(MSG), 0);
     if (bytes_received <= 0) {
         printf("Server disconnected\n");
         return -1;
     }
 
     printf("%s: %s\n", recvd_MSG.sender, recvd_MSG.message);
-
     return 0;
 }
 
@@ -72,39 +70,63 @@ int main(int argc, char *argv[]) {
     printf("Connected\n");
     printf("Use %s to quit\n", QUIT_CMD);
 
-    struct pollfd pfds[] = {{.fd = client_socket, .events = POLLIN}, {.fd = STDIN_FILENO, .events = POLLIN}};
-    while (true) {
+    // Watch for stdin and recv
+    int epoll_fd = epoll_create(MAX_EVENTS);
+    struct epoll_event events[MAX_EVENTS];
+
+    // Register the socket for read events
+    struct epoll_event recv_event = {.events = EPOLLIN, .data.fd = client_socket};
+    status = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_socket, &recv_event);
+    if (status == -1) {
+        perror("EPOLL error: ");
+        return EXIT_FAILURE;
+    }
+
+    // Register the stdin for input events
+    struct epoll_event input_event = {.events = EPOLLIN, .data.fd = STDIN_FILENO};
+    status = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, STDIN_FILENO, &input_event);
+    if (status == -1) {
+        perror("EPOLL error: ");
+        return EXIT_FAILURE;
+    }
+
+    int loop_status = 0;
+    while (!loop_status) {
         printf("> ");
         fflush(stdout);
 
-        int event_count = poll(pfds, sizeof(pfds) / sizeof(*pfds), -1);
-        if (event_count < 0) {
-            perror("Poll error");
+        status = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        if (status == -1) {
+            perror("EPOLL error:");
             return EXIT_FAILURE;
         }
 
-        if (pfds[0].revents & POLLIN) {
-            status = receive_messages(client_socket);
-            if (status == -1) {
-                break;
-            }
-        }
-
-        if (pfds[1].revents & POLLIN) {
-            fgets(buffer, sizeof(buffer), stdin);
-            buffer[strcspn(buffer, "\n")] = '\0';
-            if (strncmp(buffer, QUIT_CMD, sizeof(QUIT_CMD)) == 0) {
-                break;
+        for (size_t i = 0; i < status; i++) {
+            if (events[i].data.fd == client_socket && events[i].events & EPOLLIN) {
+                // We got some message
+                status = receive_messages(client_socket);
+                if (status == -1) {
+                    loop_status = 1;
+                    break;
+                }
             }
 
-            status = send_message(client_socket, buffer);
-            bzero(buffer, sizeof(buffer));
-            if (status == -1) {
-                break;
+            if (events[i].data.fd == STDIN_FILENO && events[i].events & EPOLLIN) {
+                // We got some input
+                fgets(buffer, sizeof(buffer), stdin);
+                buffer[strcspn(buffer, "\n")] = '\0';
+                if (strncmp(buffer, QUIT_CMD, sizeof(QUIT_CMD)) == 0) {
+                    loop_status = 1;
+                    break;
+                }
+
+                status = send_message(client_socket, buffer);
+                bzero(buffer, sizeof(buffer));
             }
         }
     }
 
+    close(epoll_fd);
     close(client_socket);
     return EXIT_SUCCESS;
 }
