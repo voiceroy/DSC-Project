@@ -9,8 +9,7 @@
 #define MSG_SIZE 513
 #define SNDR_SIZE 19
 #define MAX_EVENTS 2
-
-char QUIT_CMD[] = "QUIT";
+#define QUIT_CMD "QUIT"
 
 typedef struct {
     char message[MSG_SIZE];
