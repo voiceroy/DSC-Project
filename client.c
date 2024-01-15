@@ -1,5 +1,4 @@
 #include <arpa/inet.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,17 +15,17 @@ char QUIT_CMD[] = "QUIT";
 typedef struct {
     char message[MSG_SIZE];
     char sender[SNDR_SIZE];
-} MSG;
+} msg;
 
 int receive_messages(int client_socket) {
-    MSG recvd_MSG;
-    int bytes_received = recv(client_socket, &recvd_MSG, sizeof(MSG), 0);
+    msg recvd_msg;
+    int bytes_received = recv(client_socket, &recvd_msg, sizeof(msg), 0);
     if (bytes_received <= 0) {
         printf("Server disconnected\n");
         return -1;
     }
 
-    printf("%s: %s\n", recvd_MSG.sender, recvd_MSG.message);
+    printf("%s: %s\n", recvd_msg.sender, recvd_msg.message);
     return 0;
 }
 
@@ -78,7 +77,7 @@ int main(int argc, char *argv[]) {
     struct epoll_event recv_event = {.events = EPOLLIN, .data.fd = client_socket};
     status = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_socket, &recv_event);
     if (status == -1) {
-        perror("EPOLL error: ");
+        perror("Epoll error: ");
         return EXIT_FAILURE;
     }
 
@@ -86,7 +85,7 @@ int main(int argc, char *argv[]) {
     struct epoll_event input_event = {.events = EPOLLIN, .data.fd = STDIN_FILENO};
     status = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, STDIN_FILENO, &input_event);
     if (status == -1) {
-        perror("EPOLL error: ");
+        perror("Epoll error: ");
         return EXIT_FAILURE;
     }
 
@@ -97,13 +96,13 @@ int main(int argc, char *argv[]) {
 
         int occured = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (status == -1) {
-            perror("EPOLL error:");
+            perror("Epoll error:");
             return EXIT_FAILURE;
         }
 
         for (size_t i = 0; i < occured; i++) {
+            // We got some message
             if (events[i].data.fd == client_socket && events[i].events & EPOLLIN) {
-                // We got some message
                 status = receive_messages(client_socket);
                 if (status == -1) {
                     loop_status = 1;
@@ -111,8 +110,8 @@ int main(int argc, char *argv[]) {
                 }
             }
 
+            // We got some input from the user
             if (events[i].data.fd == STDIN_FILENO && events[i].events & EPOLLIN) {
-                // We got some input
                 fgets(buffer, sizeof(buffer), stdin);
                 buffer[strcspn(buffer, "\n")] = '\0';
                 if (strncmp(buffer, QUIT_CMD, sizeof(QUIT_CMD)) == 0) {
@@ -120,7 +119,10 @@ int main(int argc, char *argv[]) {
                     break;
                 }
 
-                status = send_message(client_socket, buffer);
+                // Don't send empty messages
+                if (strlen(buffer) > 0) {
+                    status = send_message(client_socket, buffer);
+                }
                 bzero(buffer, sizeof(buffer));
             }
         }
