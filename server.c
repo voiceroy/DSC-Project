@@ -85,18 +85,18 @@ int main(int argc, char *argv[]) {
     }
     port = atoi(argv[1]);
 
-    if (argc >= 3) {
+    if (argc == 3) {
         config.max_clients = atoi(argv[2]);
         if (config.max_clients <= 0) {
             config.max_clients = 10;
         }
         config.max_events = config.max_clients;
+    }
 
-        if (argc == 4) {
-            config.max_msg_hist = atoi(argv[3]);
-            if (config.max_msg_hist <= 0) {
-                config.max_msg_hist = 100;
-            }
+    if (argc == 4) {
+        config.max_msg_hist = atoi(argv[3]);
+        if (config.max_msg_hist <= 0) {
+            config.max_msg_hist = 100;
         }
     }
 
