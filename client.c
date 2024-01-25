@@ -1,20 +1,13 @@
-#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include "structures.h"
 
-#define MSG_SIZE 513
-#define SNDR_SIZE 19
 #define MAX_EVENTS 2
 #define QUIT_CMD "QUIT"
-
-typedef struct {
-    char message[MSG_SIZE];
-    char sender[SNDR_SIZE];
-} msg;
 
 int receive_messages(int client_socket) {
     msg recvd_msg;
