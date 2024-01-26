@@ -49,13 +49,8 @@ int append(linked_list *ll, node *nn) {
         ll->head = nn;
         ll->tail = ll->head;
     } else {
-        node *current_node = ll->head;
-        for (size_t i = 0; i < ll->length - 1; i++) {
-            current_node = current_node->next;
-        }
-
-        current_node->next = nn;
-        ll->tail = current_node->next;
+        ll->tail->next = nn;
+        ll->tail = nn;
     }
     ll->length++;
 
