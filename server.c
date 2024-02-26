@@ -188,7 +188,7 @@ int main(int argc, char *argv[]) {
                 int client_index = -1;
 
                 // Find the client index
-                for (size_t j = 0; j < config.max_clients; j++) {
+                for (int j = 0; j < config.max_clients; j++) {
                     if (clients[j].client_socket == client_fd) {
                         client_index = j;
                         break;

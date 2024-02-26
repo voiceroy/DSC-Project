@@ -24,6 +24,7 @@ int receive_messages(int client_socket) {
 int send_message(int client_socket, char message[MSG_SIZE]) {
     if (send(client_socket, message, strlen(message), 0) == -1) {
         perror("Message sending failed");
+        return -1;
     }
 
     return 0;
@@ -86,13 +87,13 @@ int main(int argc, char *argv[]) {
         printf("> ");
         fflush(stdout);
 
-        int occured = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (status == -1) {
             perror("Epoll error:");
             return EXIT_FAILURE;
         }
 
-        for (size_t i = 0; i < occured; i++) {
+        for (int i = 0; i < num_events; i++) {
             // We got some message
             if (events[i].data.fd == client_socket && events[i].events & EPOLLIN) {
                 status = receive_messages(client_socket);
