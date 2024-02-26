@@ -1,8 +1,5 @@
 #include <stddef.h>
 
-#ifndef LINKEDLIST_H
-#define LINKEDLIST_H
-
 struct node {
     void *data; // data of any type
     struct node *next;
@@ -25,5 +22,3 @@ node *make_node(void *data);
 linked_list *make_linked_list();
 int append(linked_list *ll, node *nn);
 int delete_node(linked_list *ll, size_t index);
-
-#endif
